@@ -20,15 +20,21 @@ jobs:
         mkdir -p iso/boot/grub
         mkdir -p initramfs/{bin,dev,proc,sys,sbin,etc,lib/modules}
 
-        # 1. BusyBox with Fail-safe
+        # 1. BusyBox with fail-safe
         if ! wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox; then
            wget -O initramfs/bin/busybox https://github.com/moparisthebest/static-binaries/raw/master/bin/busybox-x86_64
         fi
         chmod +x initramfs/bin/busybox
         initramfs/bin/busybox --install -s initramfs/bin
 
-        # 2. Add Kernel Modules
+        # 2. Kernel and Modules
         KERNEL_VERSION=$(uname -r)
+        # The "Nuclear" copy strategy to bypass permissions
+        sudo cp /boot/vmlinuz-$KERNEL_VERSION ./vmlinuz_temp
+        mv ./vmlinuz_temp iso/boot/vmlinuz
+        sudo chmod 644 iso/boot/vmlinuz
+        
+        # Modules
         cp -r /lib/modules/$KERNEL_VERSION initramfs/lib/modules/
         depmod -b initramfs $KERNEL_VERSION
 
@@ -50,10 +56,7 @@ jobs:
         find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../iso/boot/initrd.img
         cd ..
 
-        # 5. Copy Kernel
-        cp /boot/vmlinuz-$KERNEL_VERSION iso/boot/vmlinuz
-
-        # 6. Configure GRUB
+        # 5. Configure GRUB
         cat << 'EOF' > iso/boot/grub/grub.cfg
         set gfxpayload=keep
         set timeout=1
@@ -63,7 +66,7 @@ jobs:
         }
         EOF
 
-        # 7. Finalize ISO
+        # 6. Finalize ISO
         grub-mkrescue -o diggaos-universal.iso iso
 
     - name: Upload Artifact
