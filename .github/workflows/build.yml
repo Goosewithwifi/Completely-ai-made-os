@@ -22,7 +22,7 @@ jobs:
         mkdir -p iso/boot/grub
         mkdir -p initramfs/bin initramfs/dev initramfs/proc initramfs/sys initramfs/sbin initramfs/etc
 
-        # 2. Grab Static BusyBox (x86_64) from official source
+        # 2. Grab Static BusyBox (x86_64)
         wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
         chmod +x initramfs/bin/busybox
 
@@ -50,9 +50,20 @@ jobs:
         find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../iso/boot/initrd.img
         cd ..
 
-        # 5. Copy the kernel from the local GitHub runner
-        # This replaces the failing wget with a guaranteed local file
-        sudo find /boot -name "vmlinuz-*-generic" | head -n 1 | xargs -I {} sudo cp {} iso/boot/vmlinuz
+        # 5. Robust Kernel Discovery
+        # Search /boot AND /lib/modules to ensure we catch the kernel file
+        KERNEL_FILE=$(find /boot /lib/modules -name "vmlinuz*" -o -name "bzImage*" | head -n 1)
+        if [ -z "$KERNEL_FILE" ]; then
+            echo "Searching deeper for kernel..."
+            KERNEL_FILE=$(find / -name "vmlinuz*" -type f 2>/dev/null | head -n 1)
+        fi
+        
+        if [ -z "$KERNEL_FILE" ]; then
+            echo "CRITICAL: No kernel found anywhere!"
+            exit 1
+        fi
+        
+        sudo cp "$KERNEL_FILE" iso/boot/vmlinuz
         sudo chmod 644 iso/boot/vmlinuz
 
         # 6. Configure GRUB
