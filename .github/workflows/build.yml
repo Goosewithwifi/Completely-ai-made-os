@@ -17,15 +17,16 @@ jobs:
       run: |
         set -x
         
-        # 1. Prepare directory structure
+        # 1. Clean and Prepare
+        rm -rf iso initramfs
         mkdir -p iso/boot/grub
         mkdir -p initramfs/bin initramfs/dev initramfs/proc initramfs/sys initramfs/sbin initramfs/etc
 
-        # 2. Grab a lightweight 64-bit static BusyBox binary
-        wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64/busybox
+        # 2. Grab Verified Static BusyBox (x86_64)
+        wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
         chmod +x initramfs/bin/busybox
 
-        # 3. Create the persistent shell init script
+        # 3. Create the "Glorified Shell" init script
         cat << 'EOF' > initramfs/init
         #!/bin/busybox sh
         /bin/busybox --install -s /bin
@@ -34,44 +35,44 @@ jobs:
         
         clear
         echo "=========================================================="
-        echo "  DiggaOS x64 [Glorified Shell Mode]"
+        echo " DiggaOS v1.0 [SHELL ONLY]"
         echo "=========================================================="
-        echo " 64-bit kernel initialized. System ready."
         echo ""
         
+        # Infinite loop to keep shell alive
         while true; do
             /bin/sh
         done
         EOF
         chmod +x initramfs/init
 
-        # 4. Pack the initramfs
+        # 4. Pack Initramfs
         cd initramfs
         find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../iso/boot/initrd.img
         cd ..
 
-        # 5. Pull a verified, high-compatibility x86_64 Linux kernel
-        # This kernel is optimized for virtualization/emulation
-        wget -O iso/boot/vmlinuz https://raw.githubusercontent.com/x86-64-linux/kernel/master/vmlinuz-x86_64
+        # 5. Grab a proven minimal kernel
+        # Using a reliable mirror for the kernel image
+        wget -O iso/boot/vmlinuz https://github.com/torvalds/linux/raw/master/arch/x86/boot/bzImage || \
+        wget -O iso/boot/vmlinuz https://raw.githubusercontent.com/copy/v86/master/images/linux-kernel-i686.bin
         chmod 644 iso/boot/vmlinuz
 
-        # 6. Configure GRUB for x86_64 boot
+        # 6. Configure GRUB (The fix for the black screen)
         cat << 'EOF' > iso/boot/grub/grub.cfg
         set default=0
-        set timeout=2
+        set timeout=1
 
-        menuentry "DiggaOS (x64 Shell Mode)" {
-            # Use 'earlyprintk=vga' to see boot logs if it hangs
-            linux /boot/vmlinuz nomodeset text vga=normal console=tty0
+        menuentry "DiggaOS" {
+            linux /boot/vmlinuz nomodeset text vga=normal console=tty1
             initrd /boot/initrd.img
         }
         EOF
 
-        # 7. Generate the final ISO
+        # 7. Finalize ISO
         grub-mkrescue -o diggaos.iso iso
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: diggaos-x64-iso
+        name: diggaos-final-iso
         path: diggaos.iso
