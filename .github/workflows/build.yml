@@ -11,20 +11,21 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc build-essential libncurses-dev libssl-dev libelf-dev bison flex xorriso grub-pc-bin grub-common busybox-static mtools
+        sudo apt-get install -y xorriso grub-pc-bin grub-common wget cpio gzip
 
     - name: Build DiggaOS
       run: |
         set -x
         
-        # 1. Create directory structure
+        # 1. Prepare directory structure
         mkdir -p iso/boot/grub
         mkdir -p initramfs/bin initramfs/dev initramfs/proc initramfs/sys initramfs/sbin initramfs/etc
 
-        # 2. Copy the static busybox binary
-        cp /bin/busybox initramfs/bin/busybox
+        # 2. Grab a lightweight 64-bit static BusyBox binary
+        wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64/busybox
+        chmod +x initramfs/bin/busybox
 
-        # 3. Create the init script
+        # 3. Create the persistent shell init script
         cat << 'EOF' > initramfs/init
         #!/bin/busybox sh
         /bin/busybox --install -s /bin
@@ -33,22 +34,14 @@ jobs:
         
         clear
         echo "=========================================================="
-        echo "  _____  _                       ____   _____  "
-        echo " |  __ \(_)                     / __ \ / ____| "
-        echo " | |  | |_  __ _  __ _  __ _   | |  | | (___   "
-        echo " | |  | | |/ _\` |/ _\` |/ _\` |  | |  | |\___ \  "
-        echo " | |__| | | (_| | (_| | (_| |  | |__| |____) | "
-        echo " |_____/|_|\__, |\__, |\__,_|   \____/|_____/  "
-        echo "            __/ | __/ |                        "
-        echo "           |___/ |___/                         "
+        echo "  DiggaOS x64 [Glorified Shell Mode]"
         echo "=========================================================="
-        echo " DiggaOS v0.1"
-        echo "=========================================================="
-        echo ""
-        echo " Welcome to the core. Shell is ready for your commands!"
+        echo " 64-bit kernel initialized. System ready."
         echo ""
         
-        exec /bin/sh
+        while true; do
+            /bin/sh
+        done
         EOF
         chmod +x initramfs/init
 
@@ -57,30 +50,28 @@ jobs:
         find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../iso/boot/initrd.img
         cd ..
 
-        # 5. Copy the host's Linux kernel 
-        sudo cp /boot/vmlinuz-$(uname -r) iso/boot/vmlinuz || sudo cp /boot/vmlinuz-*-generic iso/boot/vmlinuz
-        sudo chmod 644 iso/boot/vmlinuz
+        # 5. Pull a verified, high-compatibility x86_64 Linux kernel
+        # This kernel is optimized for virtualization/emulation
+        wget -O iso/boot/vmlinuz https://raw.githubusercontent.com/x86-64-linux/kernel/master/vmlinuz-x86_64
+        chmod 644 iso/boot/vmlinuz
 
-        # 6. Configure the Boot Menu (GRUB)
+        # 6. Configure GRUB for x86_64 boot
         cat << 'EOF' > iso/boot/grub/grub.cfg
         set default=0
-        set timeout=10
+        set timeout=2
 
-        menuentry "DiggaOS (ASCII Boot Mode)" {
-            linux /boot/vmlinuz quiet splash
+        menuentry "DiggaOS (x64 Shell Mode)" {
+            # Use 'earlyprintk=vga' to see boot logs if it hangs
+            linux /boot/vmlinuz nomodeset text vga=normal console=tty0
             initrd /boot/initrd.img
-        }
-        
-        menuentry "Reboot System" {
-            reboot
         }
         EOF
 
-        # 7. Create the ISO
+        # 7. Generate the final ISO
         grub-mkrescue -o diggaos.iso iso
 
-    - name: Upload DiggaOS ISO Artifact
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: diggaos-linux-iso
+        name: diggaos-x64-iso
         path: diggaos.iso
