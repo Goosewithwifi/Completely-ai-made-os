@@ -11,7 +11,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc build-essential libncurses-dev libssl-dev libelf-dev bison flex xorriso grub-pc-bin grub-common
+        sudo apt-get install -y bc build-essential libncurses-dev libssl-dev libelf-dev bison flex xorriso grub-pc-bin grub-common busybox-static
 
     - name: Build DiggaOS
       run: |
@@ -19,10 +19,8 @@ jobs:
         mkdir -p iso/boot/grub
         mkdir -p initramfs/{bin,dev,proc,sys,sbin,etc}
 
-        # 2. Get BusyBox (The mini tools)
-        wget https://busybox.net/downloads/binaries/1.35.0-x86_64/busybox
-        chmod +x busybox
-        cp busybox initramfs/bin/
+        # 2. Copy BusyBox from the system
+        cp /bin/busybox initramfs/bin/
 
         # 3. Create the init script with customized DiggaOS ASCII
         cat << 'EOF' > initramfs/init
