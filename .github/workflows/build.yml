@@ -11,7 +11,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y xorriso grub-pc-bin grub-common cpio gzip mtools kmod
+        sudo apt-get install -y xorriso grub-pc-bin grub-common cpio gzip mtools kmod xz-utils
 
     - name: Build DiggaOS
       run: |
@@ -32,7 +32,7 @@ jobs:
         sudo chmod 644 iso/boot/vmlinuz
         cp -r /lib/modules/$KERNEL_VERSION initramfs/lib/modules/
 
-        # 3. Init Script (The Fix)
+        # 3. Init Script
         cat << 'EOF' > initramfs/init
         #!/bin/sh
         export PATH=/bin:/sbin
@@ -45,14 +45,16 @@ jobs:
         EOF
         chmod +x initramfs/init
 
-        # 4. Pack Initramfs (Corrected Root Packing)
+        # 4. Pack Initramfs (Using xz for better compression)
         cd initramfs
-        find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../iso/boot/initrd.img
+        find . -print0 | cpio --null -ov --format=newc | xz -9 > ../iso/boot/initrd.img
         cd ..
 
-        # 5. GRUB Config (Explicit init path)
+        # 5. GRUB Config (The Fix: Added filesystem modules)
         cat << 'EOF' > iso/boot/grub/grub.cfg
         set timeout=1
+        insmod part_iso9660
+        insmod iso9660
         menuentry "DiggaOS Universal" {
             linux /boot/vmlinuz root=/dev/ram0 rw nomodeset init=/init
             initrd /boot/initrd.img
