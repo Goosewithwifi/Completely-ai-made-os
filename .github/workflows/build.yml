@@ -21,11 +21,8 @@ jobs:
         mkdir -p initramfs/{bin,dev,proc,sys,sbin,etc,lib/modules}
 
         # 1. BusyBox
-        if ! wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox; then
-           wget -O initramfs/bin/busybox https://github.com/moparisthebest/static-binaries/raw/master/bin/busybox-x86_64
-        fi
+        wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
         chmod +x initramfs/bin/busybox
-        # Symlink all busybox commands
         ./initramfs/bin/busybox --install -s ./initramfs/bin
 
         # 2. Kernel and Modules
@@ -33,38 +30,31 @@ jobs:
         sudo cp /boot/vmlinuz-$KERNEL_VERSION ./vmlinuz_temp
         mv ./vmlinuz_temp iso/boot/vmlinuz
         sudo chmod 644 iso/boot/vmlinuz
-        
         cp -r /lib/modules/$KERNEL_VERSION initramfs/lib/modules/
 
-        # 3. The "Indestructible" Init Script
+        # 3. Init Script (The Fix)
         cat << 'EOF' > initramfs/init
         #!/bin/sh
         export PATH=/bin:/sbin
         mount -t proc none /proc
         mount -t sysfs none /sys
-        
-        # Load drivers brute-force
-        for m in $(find /lib/modules -name "*.ko"); do
-            insmod $m
-        done
-        
+        for m in $(find /lib/modules -name "*.ko"); do insmod $m; done
         clear
-        echo "DiggaOS Kernel loaded. Launching shell..."
-        # The 'exec' here is the magic that prevents kernel panic
+        echo "DiggaOS Loaded."
         exec /bin/sh
         EOF
         chmod +x initramfs/init
 
-        # 4. Pack Initramfs
+        # 4. Pack Initramfs (Corrected Root Packing)
         cd initramfs
         find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../iso/boot/initrd.img
         cd ..
 
-        # 5. GRUB Config
+        # 5. GRUB Config (Explicit init path)
         cat << 'EOF' > iso/boot/grub/grub.cfg
         set timeout=1
         menuentry "DiggaOS Universal" {
-            linux /boot/vmlinuz root=/dev/ram0 rw nomodeset
+            linux /boot/vmlinuz root=/dev/ram0 rw nomodeset init=/init
             initrd /boot/initrd.img
         }
         EOF
