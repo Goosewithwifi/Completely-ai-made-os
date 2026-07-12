@@ -15,14 +15,14 @@ jobs:
 
     - name: Build DiggaOS
       run: |
-        set -x # Print commands to see exactly where it fails
+        set -x
         
         # 1. Create directory structure
         mkdir -p iso/boot/grub
         mkdir -p initramfs/bin initramfs/dev initramfs/proc initramfs/sys initramfs/sbin initramfs/etc
 
-        # 2. Copy the static busybox binary explicitly
-        cp /bin/busybox-static initramfs/bin/busybox
+        # 2. Copy the static busybox binary from its correct location
+        cp /bin/busybox initramfs/bin/busybox
 
         # 3. Create the init script
         cat << 'EOF' > initramfs/init
