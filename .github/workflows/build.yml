@@ -1,4 +1,4 @@
-name: Build Universal DiggaOS
+name: Build DiggaOS with Networking
 on: [push, workflow_dispatch]
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
         mkdir -p iso/boot/grub
         mkdir -p initramfs/{bin,dev,proc,sys,sbin,etc,lib/modules}
 
-        # 1. BusyBox
+        # 1. BusyBox (includes ifconfig, route, ping, etc.)
         wget -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
         chmod +x initramfs/bin/busybox
         ./initramfs/bin/busybox --install -s ./initramfs/bin
@@ -32,40 +32,87 @@ jobs:
         sudo chmod 644 iso/boot/vmlinuz
         cp -r /lib/modules/$KERNEL_VERSION initramfs/lib/modules/
 
-        # 3. Init Script
+        # 3. Init Script (WITH NETWORKING SUPPORT)
         cat << 'EOF' > initramfs/init
         #!/bin/sh
-        export PATH=/bin:/sbin
+
+        # DiggaOS Init Script v1.1 - With Networking
+        export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+        export HOME=/root
+        export TERM=linux
+
+        # Mount essential filesystems
+        echo "Mounting filesystems..."
         mount -t proc none /proc
         mount -t sysfs none /sys
-        for m in $(find /lib/modules -name "*.ko"); do insmod $m; done
+        mount -t devtmpfs none /dev
+
+        # Load kernel modules
+        echo "Loading kernel modules..."
+        for m in $(find /lib/modules -name "*.ko" 2>/dev/null); do 
+            insmod $m 2>/dev/null
+        done
+
+        # Wait for devices to settle
+        sleep 1
+
+        # Network Setup
+        echo "Initializing network..."
+
+        # Find first non-loopback network interface
+        IFACE=$(ls /sys/class/net 2>/dev/null | grep -v lo | head -1)
+
+        if [ -n "$IFACE" ]; then
+            echo "Found network interface: $IFACE"
+            ifconfig $IFACE up
+            # Uncomment to use DHCP (if dhcpcd is available):
+            # dhcpcd -T $IFACE &
+        else
+            echo "No network interface detected (OK)"
+        fi
+
+        # Display boot message
         clear
-        echo "DiggaOS Loaded."
+        cat << 'BOOT'
+          __  _ _                ____ ____ 
+         |  \| (_)               / __ / ___|
+         | | | | | __ _  __ _   | |  | \___ 
+         | |_| | |/ _` |/ _` |  | |__| | ___) 
+         |____/|_|\__, |\__, |   \____/ |____/
+                  |___/ |___/  
+
+        DiggaOS v1.1 - With Networking
+        Type 'ifconfig' to check network status
+        Type 'help' for available commands
+        BOOT
+        echo ""
+
+        # Launch shell
         exec /bin/sh
         EOF
         chmod +x initramfs/init
 
-        # 4. Pack Initramfs (Using xz for better compression)
+        # 4. Pack Initramfs
         cd initramfs
         find . -print0 | cpio --null -ov --format=newc | xz -9 > ../iso/boot/initrd.img
         cd ..
 
-        # 5. GRUB Config (The Fix: Added filesystem modules)
+        # 5. GRUB Config
         cat << 'EOF' > iso/boot/grub/grub.cfg
         set timeout=1
         insmod part_iso9660
         insmod iso9660
-        menuentry "DiggaOS Universal" {
+        menuentry "DiggaOS with Networking" {
             linux /boot/vmlinuz root=/dev/ram0 rw nomodeset init=/init
             initrd /boot/initrd.img
         }
         EOF
 
         # 6. Build ISO
-        grub-mkrescue -o diggaos-universal.iso iso
+        grub-mkrescue -o diggaos-networking.iso iso
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: diggaos-universal
-        path: diggaos-universal.iso
+        name: diggaos-networking
+        path: diggaos-networking.iso
