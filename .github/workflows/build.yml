@@ -20,48 +20,50 @@ jobs:
         mkdir -p iso/boot/grub
         mkdir -p initramfs/bin initramfs/dev initramfs/proc initramfs/sys initramfs/sbin initramfs/etc initramfs/lib/modules initramfs/var/cache/apt/archives initramfs/var/lib/apt/lists initramfs/var/lib/dpkg initramfs/usr/bin initramfs/usr/lib
 
-        echo "Downloading BusyBox..."
+        echo "== Downloading BusyBox =="
         wget -q -O initramfs/bin/busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
+        test -s initramfs/bin/busybox || { echo "FATAL: busybox download failed or is empty"; exit 1; }
         chmod +x initramfs/bin/busybox
         ./initramfs/bin/busybox --install -s ./initramfs/bin
 
-        echo "Extracting APT from Ubuntu repositories..."
+        echo "== Extracting APT (best-effort, non-fatal) =="
         mkdir -p /tmp/apt-extract
-        cd /tmp/apt-extract
-        wget -q http://mirrors.kernel.org/ubuntu/pool/main/a/apt/apt_2.7.14ubuntu1_amd64.deb -O apt.deb || true
-        if [ -f apt.deb ]; then
-          ar x apt.deb || true
-          if [ -f data.tar.xz ]; then
-            tar -xf data.tar.xz || true
-            if [ -f usr/bin/apt ]; then
-              cp usr/bin/apt /home/runner/work/*/*/initramfs/bin/apt 2>/dev/null || cp usr/bin/apt "$GITHUB_WORKSPACE/initramfs/bin/apt"
-              chmod +x "$GITHUB_WORKSPACE/initramfs/bin/apt"
-            fi
-            if [ -f usr/bin/apt-get ]; then
-              cp usr/bin/apt-get "$GITHUB_WORKSPACE/initramfs/bin/apt-get"
-              chmod +x "$GITHUB_WORKSPACE/initramfs/bin/apt-get"
-            fi
-            if [ -f usr/bin/apt-cache ]; then
-              cp usr/bin/apt-cache "$GITHUB_WORKSPACE/initramfs/bin/apt-cache"
-              chmod +x "$GITHUB_WORKSPACE/initramfs/bin/apt-cache"
+        (
+          cd /tmp/apt-extract
+          wget -q http://mirrors.kernel.org/ubuntu/pool/main/a/apt/apt_2.7.14ubuntu1_amd64.deb -O apt.deb || true
+          if [ -s apt.deb ]; then
+            ar x apt.deb || true
+            if [ -f data.tar.xz ]; then
+              tar -xf data.tar.xz || true
             fi
           fi
-        fi
-        cd "$GITHUB_WORKSPACE"
-
+        )
+        # Copy whatever we got, using an explicit absolute path — no globs, no guessing
+        for bin in apt apt-get apt-cache; do
+          if [ -f "/tmp/apt-extract/usr/bin/$bin" ]; then
+            cp "/tmp/apt-extract/usr/bin/$bin" "$GITHUB_WORKSPACE/initramfs/bin/$bin"
+            chmod +x "$GITHUB_WORKSPACE/initramfs/bin/$bin"
+            echo "  -> installed $bin"
+          else
+            echo "  -> $bin not available (skipping, non-fatal)"
+          fi
+        done
         if [ -f initramfs/bin/apt-get ] && [ ! -f initramfs/bin/apt ]; then
-          ln -s apt-get initramfs/bin/apt || true
+          ln -s apt-get initramfs/bin/apt
         fi
 
-        echo "Copying kernel and modules..."
+        echo "== Copying kernel and modules =="
         KERNEL_VERSION=$(uname -r)
+        test -f /boot/vmlinuz-$KERNEL_VERSION || { echo "FATAL: kernel image not found at /boot/vmlinuz-$KERNEL_VERSION"; exit 1; }
         sudo cp /boot/vmlinuz-$KERNEL_VERSION ./vmlinuz_temp
         mv ./vmlinuz_temp iso/boot/vmlinuz
         sudo chmod 644 iso/boot/vmlinuz
-        sudo cp -r /lib/modules/$KERNEL_VERSION initramfs/lib/modules/
-        sudo chown -R $(id -u):$(id -g) initramfs/
 
-        echo "Creating init script..."
+        test -d /lib/modules/$KERNEL_VERSION || { echo "FATAL: kernel modules dir not found at /lib/modules/$KERNEL_VERSION"; exit 1; }
+        sudo cp -r /lib/modules/$KERNEL_VERSION initramfs/lib/modules/
+        sudo chown -R $(id -u):$(id -g) initramfs
+
+        echo "== Creating init script =="
         printf '%s\n' \
           '#!/bin/sh' \
           'export PATH=/bin:/sbin:/usr/bin:/usr/sbin' \
@@ -110,13 +112,29 @@ jobs:
           'exec /bin/sh' \
           > initramfs/init
         chmod +x initramfs/init
+        test -s initramfs/init || { echo "FATAL: init script is empty"; exit 1; }
 
-        echo "Packing initramfs..."
-        cd initramfs
-        find . -print0 | cpio --null -ov --format=newc | xz -9 > ../iso/boot/initrd.img
-        cd ..
+        echo "== Verifying initramfs contents before packing =="
+        echo "Contents of initramfs/:"
+        find initramfs -maxdepth 2
+        test -x initramfs/bin/busybox || { echo "FATAL: busybox missing from initramfs before packing"; exit 1; }
+        test -x initramfs/init || { echo "FATAL: /init missing or not executable before packing"; exit 1; }
+        du -sh initramfs
 
-        echo "Creating GRUB config..."
+        echo "== Packing initramfs =="
+        (
+          cd initramfs
+          find . -print0 | cpio --null -ov --format=newc | xz -9 > ../iso/boot/initrd.img
+        )
+        test -s iso/boot/initrd.img || { echo "FATAL: initrd.img is empty after packing"; exit 1; }
+        echo "initrd.img size:"
+        ls -lh iso/boot/initrd.img
+
+        echo "== Sanity check: can we read back the cpio archive? =="
+        xz -dc iso/boot/initrd.img | cpio -t 2>&1 | head -20
+        echo "(^ should list files like ./init, ./bin/busybox, etc. If empty, the pack failed.)"
+
+        echo "== Creating GRUB config =="
         printf '%s\n' \
           'set timeout=1' \
           'insmod part_iso9660' \
@@ -127,7 +145,7 @@ jobs:
           '}' \
           > iso/boot/grub/grub.cfg
 
-        echo "Building ISO..."
+        echo "== Building ISO =="
         grub-mkrescue -o diggaos-apt.iso iso
         ls -lh diggaos-apt.iso
 
