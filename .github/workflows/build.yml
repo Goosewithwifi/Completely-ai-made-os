@@ -104,14 +104,35 @@ jobs:
 
         echo "=== Step 7: Pack Initramfs ==="
         cd initramfs
-        find . -print0 | cpio --null -ov --format=newc 2>/dev/null | xz -9 > ../iso/boot/initrd.img
+        set -o pipefail
+        find . | cpio -o --format=newc > /tmp/initrd.cpio
         cd ..
-        test -s iso/boot/initrd.img || { echo "FATAL: initrd.img is empty"; exit 1; }
-        echo "✓ Initramfs packed"
-        ls -lh iso/boot/initrd.img
+        test -s /tmp/initrd.cpio || { echo "FATAL: cpio archive is empty"; exit 1; }
+        echo "cpio archive size: $(ls -lh /tmp/initrd.cpio | awk '{print $5}')"
+        xz -9 -c /tmp/initrd.cpio > iso/boot/initrd.img
+        test -s iso/boot/initrd.img || { echo "FATAL: compressed initrd.img is empty"; exit 1; }
+        echo "✓ initrd.img packed: $(ls -lh iso/boot/initrd.img | awk '{print $5}')"
 
-        echo "=== Step 8: CPIO Archive Ready ==="
-        echo "✓ Initrd packed and ready"
+        echo "=== Step 8: Verify Archive Contents ==="
+        mkdir -p /tmp/verify-extract
+        cd /tmp/verify-extract
+        cpio -idm < /tmp/initrd.cpio > /tmp/cpio_extract.log 2>&1
+        cd - > /dev/null
+        if [ -x /tmp/verify-extract/init ]; then
+          echo "✓ /init present and executable in packed archive"
+        else
+          echo "FATAL: /init missing or not executable in packed archive"
+          echo "--- extraction log ---"
+          cat /tmp/cpio_extract.log
+          exit 1
+        fi
+        if [ -x /tmp/verify-extract/bin/busybox ]; then
+          echo "✓ /bin/busybox present in packed archive"
+        else
+          echo "FATAL: /bin/busybox missing from packed archive"
+          exit 1
+        fi
+        rm -rf /tmp/verify-extract /tmp/initrd.cpio
 
         echo "=== Step 9: GRUB Configuration ==="
         printf '%s\n' \
