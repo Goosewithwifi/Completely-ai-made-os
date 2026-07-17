@@ -121,19 +121,21 @@ jobs:
         ( cd initramfs && find . | cpio -o --format=newc > /tmp/initrd.cpio )
         test -s /tmp/initrd.cpio || { echo "FATAL: cpio archive is empty"; exit 1; }
         echo "cpio archive: $(ls -lh /tmp/initrd.cpio | awk '{print $5}')"
-        xz -9 -c /tmp/initrd.cpio > iso/boot/initrd.img
+        gzip -9 -c /tmp/initrd.cpio > iso/boot/initrd.img
         test -s iso/boot/initrd.img || { echo "FATAL: initrd.img is empty"; exit 1; }
-        echo "✓ initrd.img packed: $(ls -lh iso/boot/initrd.img | awk '{print $5}')"
+        echo "✓ initrd.img packed with gzip: $(ls -lh iso/boot/initrd.img | awk '{print $5}')"
 
         echo "=== Step 7: Verify Archive Contents ==="
         rm -rf /tmp/verify-extract
         mkdir -p /tmp/verify-extract
-        ( cd /tmp/verify-extract && cpio -idm < /tmp/initrd.cpio > /tmp/cpio_extract.log 2>&1 )
+        gzip -dc iso/boot/initrd.img > /tmp/initrd-check.cpio
+        test -s /tmp/initrd-check.cpio || { echo "FATAL: gzip decompression produced empty output — packed data is broken"; exit 1; }
+        ( cd /tmp/verify-extract && cpio -idm < /tmp/initrd-check.cpio > /tmp/cpio_extract.log 2>&1 )
         test -x /tmp/verify-extract/init || { echo "FATAL: /init missing after extraction"; cat /tmp/cpio_extract.log; exit 1; }
         test -x /tmp/verify-extract/bin/busybox || { echo "FATAL: busybox missing after extraction"; exit 1; }
         test -x /tmp/verify-extract/bin/sh || { echo "FATAL: /bin/sh missing after extraction"; exit 1; }
         echo "✓ /init, /bin/busybox, /bin/sh all verified present and executable"
-        rm -rf /tmp/verify-extract /tmp/initrd.cpio
+        rm -rf /tmp/verify-extract /tmp/initrd.cpio /tmp/initrd-check.cpio
 
         echo "=== Step 8: GRUB Configuration ==="
         printf '%s\n' \
