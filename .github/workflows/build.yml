@@ -17,15 +17,21 @@ jobs:
           fakeroot syslinux xorriso squashfs-tools mtools dosfstools grub-efi \
           git bash coreutils
 
-    - name: Verify logo exists in repo
+    - name: Verify logo and wallpaper exist in repo
       run: |
         if [ ! -f "branding/logo.png" ]; then
           echo "FATAL: branding/logo.png not found in repo."
           echo "Commit your goose logo to branding/logo.png before running this workflow."
           exit 1
         fi
+        if [ ! -f "DiggaOS/wallpapers/wallpaper.png" ]; then
+          echo "FATAL: DiggaOS/wallpapers/wallpaper.png not found in repo."
+          exit 1
+        fi
         cp branding/logo.png /tmp/diggaos-logo.png
-        echo "✓ Logo found and staged: $(ls -lh /tmp/diggaos-logo.png)"
+        cp "DiggaOS/wallpapers/wallpaper.png" /tmp/diggaos-wallpaper.png
+        echo "✓ Logo staged: $(ls -lh /tmp/diggaos-logo.png)"
+        echo "✓ Wallpaper staged: $(ls -lh /tmp/diggaos-wallpaper.png)"
 
     - name: Clone Alpine build scripts
       run: |
@@ -55,6 +61,7 @@ jobs:
         printf '%s\n' \
           'profile_diggaos() {' \
           '  profile_extended' \
+          '  modloop_sign="no"' \
           '  apks="$apks enlightenment xorg-server xf86-video-fbdev xf86-video-vesa"' \
           '  apks="$apks mesa-dri-swrast mesa-gl mesa-egl eudev eudev-init"' \
           '  apks="$apks dbus dbus-x11 util-linux terminology"' \
@@ -144,6 +151,9 @@ jobs:
           'if [ -f /tmp/diggaos-logo.png ]; then' \
           '  cp /tmp/diggaos-logo.png "$tmp"/usr/share/diggaos/logo.png' \
           'fi' \
+          'if [ -f /tmp/diggaos-wallpaper.png ]; then' \
+          '  cp /tmp/diggaos-wallpaper.png "$tmp"/usr/share/diggaos/wallpaper.png' \
+          'fi' \
           'makefile 1000:1000 0755 "$tmp"/home/digga/.xinitrc <<EOF' \
           '#!/bin/sh' \
           'exec enlightenment_start' \
@@ -151,7 +161,7 @@ jobs:
           'makefile 1000:1000 0755 "$tmp"/home/digga/.config/enlightenment-autostart/set-wallpaper.sh <<EOF' \
           '#!/bin/sh' \
           'sleep 5' \
-          'enlightenment_remote -desktop-bg-add 0 0 0 0 /usr/share/diggaos/logo.png 2>/dev/null || true' \
+          'enlightenment_remote -desktop-bg-add 0 0 0 0 /usr/share/diggaos/wallpaper.png 2>/dev/null || true' \
           'EOF' \
           'makefile 1000:1000 0644 "$tmp"/home/digga/.profile <<EOF' \
           'if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then' \
