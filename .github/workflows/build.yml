@@ -227,11 +227,17 @@ jobs:
       run: |
         # mkimage.sh signs the local package index it builds; a fresh container
         # has no key at all. This generates a throwaway self-signed keypair
-        # (fine for a personal ISO — we're not matching Alpine's own trust chain)
-        # and installs it non-interactively, per the error message's own instructions.
-        abuild-keygen -a -i -n
-        test -n "$(find /root/.abuild -name '*.rsa' 2>/dev/null)" || { echo "FATAL: no key generated"; exit 1; }
-        echo "✓ Signing key generated and installed"
+        # (fine for a personal ISO — we're not matching Alpine's own trust chain).
+        # We skip -i (it shells out to doas, which isn't installed here) and
+        # instead copy the public key into /etc/apk/keys/ ourselves — safe
+        # since we're already root, no privilege escalation needed.
+        # Note: this container's HOME is /github/home, not /root.
+        abuild-keygen -a -n
+        PUBKEY=$(find "$HOME/.abuild" -name '*.rsa.pub' 2>/dev/null | head -1)
+        test -n "$PUBKEY" || { echo "FATAL: no public key found after keygen in $HOME/.abuild"; exit 1; }
+        mkdir -p /etc/apk/keys
+        cp "$PUBKEY" /etc/apk/keys/
+        echo "✓ Signing key generated and installed: $PUBKEY"
 
     - name: Build ISO with mkimage.sh
       run: |
